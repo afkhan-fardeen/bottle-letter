@@ -23,6 +23,23 @@ export function pairFromUrl() {
   const qs = params.toString();
   history.replaceState(null, '', location.pathname + (qs ? `?${qs}` : '') + location.hash);
 }
+export const hasKey = () => Boolean(herKey());
+
+// Her passcode. Remote: the server decides. Local demo: it is 69.
+export async function tryKey(input) {
+  const k = input.trim();
+  if (!k) return false;
+  if (remote) {
+    const { error } = await supabase.rpc('her_replies', { k });
+    if (error) {
+      if (error.message === 'forbidden') return false;
+      throw error;
+    }
+  } else if (k !== '69') return false;
+  try { localStorage.setItem(KEY_SLOT, k); } catch { /* private mode */ }
+  return true;
+}
+
 const herKey = () => { try { return localStorage.getItem(KEY_SLOT) || ''; } catch { return ''; } };
 
 const read = (k) => {

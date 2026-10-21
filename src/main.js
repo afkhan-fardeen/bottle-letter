@@ -85,6 +85,23 @@ function splashSound() {
 
 // ---------- Her screens ----------
 
+function passcodeScreen() {
+  const input = h('input', { class: 'field', type: 'password', inputmode: 'numeric', autocomplete: 'off', 'aria-label': 'Number', placeholder: 'Your number' });
+  const msg = h('p', { class: 'small error', role: 'status' });
+  const form = h('form', { onsubmit: async (e) => {
+    e.preventDefault();
+    msg.textContent = '';
+    try {
+      if (await store.tryKey(input.value)) return route();
+      msg.textContent = 'Not quite.';
+    } catch {
+      msg.textContent = "Couldn't reach it. Try again.";
+    }
+  } }, input, h('button', { class: 'btn' }, 'Enter'), msg);
+  render(h('main', { class: 'center' }, h('p', { class: 'serif' }, 'Type your number.'), form));
+  input.focus();
+}
+
 function firstLaunch() {
   render(h('main', { class: 'center' },
     h('p', { class: 'serif' }, `What you leave here can be read by ${HIS_NAME}.`),
@@ -349,6 +366,7 @@ async function route() {
     return session ? feedScreen() : loginScreen();
   }
   stopWatchingReplies();
+  if (!store.hasKey()) return passcodeScreen();
   return pref.get('bl.seen') ? writeScreen() : firstLaunch();
 }
 
