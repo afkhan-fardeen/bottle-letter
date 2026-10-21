@@ -59,6 +59,30 @@ function chime() {
   } catch { /* audio unavailable */ }
 }
 
+// Three.js loads lazily so the first paint is not blocked; null means fall back to the flat animation.
+let scenePromise;
+const getScene = () => (scenePromise ||= import('./scene.js').then((m) => m.initScene()).catch(() => null));
+
+function splashSound() {
+  try {
+    const ctx = new AudioContext();
+    const len = ctx.sampleRate * 0.9;
+    const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3);
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(2400, ctx.currentTime);
+    filter.frequency.exponentialRampToValueAtTime(300, ctx.currentTime + 0.8);
+    const gain = ctx.createGain();
+    gain.gain.value = 0.25;
+    src.connect(filter).connect(gain).connect(ctx.destination);
+    src.start();
+  } catch { /* audio unavailable */ }
+}
+
 // ---------- Her screens ----------
 
 function firstLaunch() {
@@ -83,13 +107,14 @@ function writeScreen() {
     } }, soundOn ? icons.soundOn() : icons.soundOff());
 
   const box = h('textarea', { placeholder: 'Write whatever you need to.', 'aria-label': 'Your message', autofocus: true,
-    oninput: () => { sendBtn.disabled = !box.value.trim(); } });
+    oninput: () => { sendBtn.disabled = !box.value.trim(); getScene().then((sc) => sc?.typing()); } });
 
   const moodRow = h('div', { class: 'moods' });
   const showMoodLink = () => moodRow.replaceChildren(h('button', { class: 'link small', onclick: showChips }, 'Add a mood'));
   const showChips = () => moodRow.replaceChildren(...MOODS.map((m) => {
     const chip = h('button', { class: 'chip small', 'aria-pressed': 'false', onclick: () => {
       mood = mood === m ? null : m;
+      getScene().then((sc) => sc?.setMood(mood));
       moodRow.querySelectorAll('.chip').forEach((c) => c.setAttribute('aria-pressed', String(c.textContent === mood)));
     } }, m);
     return chip;
@@ -98,8 +123,7 @@ function writeScreen() {
 
   const sendBtn = h('button', { class: 'btn', disabled: true, onclick: () => {
     store.send(box.value, mood);
-    if (soundOn) chime();
-    sentState();
+    sentState(soundOn);
   } }, 'Send');
 
   const page = h('main', { class: 'write' },
@@ -110,12 +134,24 @@ function writeScreen() {
   );
   render(page);
   box.focus();
+  getScene().then((sc) => { sc?.setVisible(true); sc?.setMood(null); });
 }
 
-function sentState() {
+async function sentState(soundOn) {
   const write = app.querySelector('.write');
   write?.classList.add('sending');
 
+  const sc = reduceMotion() ? null : await getScene();
+  if (sc) {
+    const text = h('p', { class: 'sent-text serif', role: 'status' }, 'Carried by the tide.');
+    setTimeout(() => document.body.append(text), 2200);
+    await sc.playSend({ onImpact: () => { if (soundOn) splashSound(); } });
+    text.remove();
+    return writeScreen();
+  }
+
+  // Flat fallback: reduced motion or no WebGL.
+  if (soundOn) chime();
   const bottle = '<g class="bottle" fill="none" stroke="#3F7A80" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" transform="translate(120 30)"><path d="M-4 -18h8v6c0 3 7 5 7 12v8c0 3-2 5-5 5h-12c-3 0-5-2-5-5v-8c0-7 7-9 7-12z"/></g>';
   const wave = '<path d="M0 62c15-8 30 8 45 0s30 8 45 0 30 8 45 0 30 8 45 0 30 8 45 0" fill="none" stroke="#E6E1D8" stroke-width="1.5"/>';
   const art = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -230,6 +266,7 @@ async function feedScreen() {
 
 async function route() {
   const isHim = location.hash.startsWith('#/him') || new URLSearchParams(location.search).has('him');
+  if (scenePromise) scenePromise.then((sc) => sc?.setVisible(!isHim));
   if (isHim) {
     const session = await store.getSession();
     return session ? feedScreen() : loginScreen();

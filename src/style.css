@@ -11,7 +11,8 @@
 }
 
 * { box-sizing: border-box; }
-html, body { margin: 0; background: var(--bg); color: var(--text); }
+html { background: var(--bg); }
+html, body { margin: 0; color: var(--text); }
 body {
   font: 16px/1.5 var(--sans);
   -webkit-font-smoothing: antialiased;
@@ -89,3 +90,7 @@ button { cursor: pointer; }
 .card .body { font: 19px/1.6 var(--serif); white-space: pre-wrap; margin: 4px 0 0; overflow-wrap: anywhere; }
 .card .body.clip { display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical; overflow: hidden; }
 .error { color: #9A3B2E; font-size: 14px; }
+
+/* sent text over the 3D water */
+.sent-text { position: fixed; top: 16%; left: 0; right: 0; margin: 0; text-align: center; font-size: 22px; animation: rise 1s ease both; pointer-events: none; }
+@keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
