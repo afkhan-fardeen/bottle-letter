@@ -1,6 +1,7 @@
 import * as store from './store.js';
 import { HIS_NAME, REPLY_MINUTES } from './store.js';
-import { ambient, getCtx } from './audio.js';
+import { getCtx } from './audio.js';
+import { music } from './music.js';
 
 const app = document.getElementById('app');
 const MOODS = [
@@ -53,7 +54,7 @@ const soundEnabled = () => pref.get('bl.sound') !== '0'; // on unless she turned
 let audioUnlocked = false;
 
 function syncAmbient() {
-  if (audioUnlocked && soundEnabled() && !isHimRoute()) ambient.start(); else ambient.stop();
+  if (audioUnlocked && soundEnabled() && !isHimRoute()) music.start(); else music.stop();
 }
 function setSound(on) {
   pref.set('bl.sound', on ? '1' : '0');
@@ -130,7 +131,7 @@ const INTRO = [
   { title: 'Or when you need to vent.', sub: 'Whatever you want to share, let it out. Just write. It does not have to be perfect.' },
   { title: 'If you see a bottle floating on the water,', sub: "it's from me. Tap it to read what I left for you.", bottle: true },
   { title: 'Mine do not last forever.', sub: `Once you open one, it stays for ${REPLY_MINUTES} minutes. The timer counts down, with the time it will be gone beside it. Then it is gone for good.`, timer: true },
-  { title: 'Listen.', sub: 'Soft sounds of the sea, rain and night will play, matching the time of day. You can turn them off, top right.' },
+  { title: 'Listen.', sub: 'Soft music will play in the background, always. You can turn it off, top right.' },
 ];
 
 function firstLaunch() {
@@ -429,6 +430,7 @@ async function feedScreen() {
 async function route() {
   const isHim = location.hash.startsWith('#/him') || new URLSearchParams(location.search).has('him');
   if (scenePromise) scenePromise.then((sc) => sc?.setVisible(!isHim));
+  if (!isHim) music.preload();
   syncAmbient();
   if (isHim) stopWatchingReplies();
   if (isHim) {
