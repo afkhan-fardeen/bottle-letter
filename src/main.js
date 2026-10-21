@@ -1,5 +1,6 @@
 import * as store from './store.js';
 import { HIS_NAME, REPLY_MINUTES } from './store.js';
+import { ambient, getCtx } from './audio.js';
 
 const app = document.getElementById('app');
 const MOODS = [
@@ -47,9 +48,25 @@ function render(...nodes) {
 
 // ---------- Sound: one soft tone, no asset ----------
 
+const isHimRoute = () => location.hash.startsWith('#/him') || new URLSearchParams(location.search).has('him');
+const soundEnabled = () => pref.get('bl.sound') !== '0'; // on unless she turned it off
+let audioUnlocked = false;
+
+function syncAmbient() {
+  if (audioUnlocked && soundEnabled() && !isHimRoute()) ambient.start(); else ambient.stop();
+}
+function setSound(on) {
+  pref.set('bl.sound', on ? '1' : '0');
+  syncAmbient();
+}
+// Browsers only allow audio after a tap, so the music begins on her first touch.
+const unlockAudio = () => { audioUnlocked = true; getCtx(); syncAmbient(); };
+addEventListener('pointerdown', unlockAudio, { once: true });
+addEventListener('keydown', unlockAudio, { once: true });
+
 function chime() {
   try {
-    const ctx = new AudioContext();
+    const ctx = getCtx();
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
     osc.type = 'sine';
@@ -69,7 +86,7 @@ const getScene = () => (scenePromise ||= import('./scene.js').then((m) => m.init
 
 function splashSound() {
   try {
-    const ctx = new AudioContext();
+    const ctx = getCtx();
     const len = ctx.sampleRate * 0.9;
     const buf = ctx.createBuffer(1, len, ctx.sampleRate);
     const d = buf.getChannelData(0);
@@ -104,25 +121,65 @@ function passcodeScreen() {
   } }, input, h('button', { class: 'btn' }, 'Enter'), msg);
   render(h('main', { class: 'center' }, h('p', { class: 'serif' }, 'Type your number.'), form));
   input.focus();
+  getScene().then((sc) => sc?.setVisible(true));
 }
 
+const INTRO = [
+  { title: 'This is for you.', sub: 'A quiet place by the sea, so you always remember me.' },
+  { title: 'Whenever you miss me,', sub: 'write it here and throw it into the sea.' },
+  { title: 'Or when you need to vent.', sub: 'Whatever you want to share, let it out. Just write. It does not have to be perfect.' },
+  { title: 'If you see a bottle floating on the water,', sub: "it's from me. Tap it to read what I left for you.", bottle: true },
+  { title: 'Mine do not last forever.', sub: `Once you open one, it stays for ${REPLY_MINUTES} minutes. The timer counts down, with the time it will be gone beside it. Then it is gone for good.`, timer: true },
+  { title: 'Listen.', sub: 'Soft sounds of the sea, rain and night will play, matching the time of day. You can turn them off, top right.' },
+];
+
 function firstLaunch() {
-  render(h('main', { class: 'center' },
-    h('p', { class: 'serif' }, `What you leave here can be read by ${HIS_NAME}.`),
-    h('p', { class: 'serif muted' }, "He won't reply here, and you won't see whether he's read it."),
-    h('button', { class: 'btn', onclick: () => { pref.set('bl.seen', '1'); writeScreen(); } }, 'Okay'),
-  ));
+  let i = 0;
+  const dummy = h('div', { class: 'reply-bottle', 'aria-hidden': 'true', style: 'pointer-events:none' });
+
+  const leaveBottle = async () => {
+    dummy.remove();
+    (await getScene())?.setReplyBottle(null);
+  };
+  const finish = async () => {
+    await leaveBottle();
+    pref.set('bl.seen', '1');
+    writeScreen();
+  };
+
+  async function show() {
+    const page = INTRO[i];
+    const last = i === INTRO.length - 1;
+    const sc = await getScene();
+    sc?.setVisible(true);
+    if (page.bottle && sc) { document.body.append(dummy); sc.setReplyBottle(dummy); } else await leaveBottle();
+
+    const now = new Date();
+    const gone = new Date(now.getTime() + REPLY_MINUTES * 60_000);
+    render(h('main', { class: 'center intro' },
+      h('div', { class: 'intro-page' },
+        h('h1', { class: 'serif intro-title' }, page.title),
+        h('p', { class: 'serif intro-sub' }, page.sub),
+        page.timer ? h('div', { class: 'timer-row demo' },
+          h('span', { class: 'timer' }, `${REPLY_MINUTES}:00`),
+          h('span', { class: 'timer-times' }, `Opened ${clock(now)}`, h('br'), `Gone ${clock(gone)}`)) : null),
+      h('div', { class: 'intro-nav' },
+        h('div', { class: 'dots', 'aria-hidden': 'true' }, ...INTRO.map((_, n) => h('span', { class: n === i ? 'on' : '' }))),
+        h('button', { class: 'btn', onclick: () => { if (last) finish(); else { i += 1; show(); } } }, last ? 'Begin' : 'Next'),
+        last ? null : h('button', { class: 'link small', onclick: finish }, 'Skip'))));
+  }
+  show();
 }
 
 function writeScreen() {
   let mood = null;
-  let soundOn = pref.get('bl.sound') === '1';
+  let soundOn = soundEnabled();
 
   const date = new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' });
   const sound = h('button', { class: 'icon-btn', 'aria-label': 'Sound', 'aria-pressed': String(soundOn),
     onclick: () => {
       soundOn = !soundOn;
-      pref.set('bl.sound', soundOn ? '1' : '0');
+      setSound(soundOn);
       sound.setAttribute('aria-pressed', String(soundOn));
       sound.replaceChildren(soundOn ? icons.soundOn() : icons.soundOff());
     } }, soundOn ? icons.soundOn() : icons.soundOff());
@@ -223,17 +280,27 @@ async function openLetters() {
   try { letters = await store.openReplies(rows.map((r) => r.id)); } catch { return; }
   if (!letters.length) return checkReplies();
 
-  let timer;
-  const close = () => { clearTimeout(timer); overlay.remove(); checkReplies(); }; // text leaves the DOM here
+  let tick;
+  const close = () => { clearInterval(tick); overlay.remove(); checkReplies(); }; // text leaves the DOM here
+  const clocks = letters.map(() => h('span', { class: 'timer' }));
   const overlay = h('div', { class: 'letter-overlay', role: 'dialog', 'aria-modal': 'true', 'aria-label': `A message from ${HIS_NAME}` },
     h('div', { class: 'letter' },
-      ...letters.map((r) => h('section', {},
-        h('p', { class: 'serif letter-body' }, r.body),
-        h('p', { class: 'muted small' }, `This will be gone at ${clock(r.goneAt)}.`))),
+      ...letters.map((r, n) => h('section', {},
+        h('div', { class: 'timer-row' }, clocks[n],
+          h('span', { class: 'timer-times' }, `Opened ${clock(new Date(r.opened_at))}`, h('br'), `Gone ${clock(r.goneAt)}`)),
+        h('p', { class: 'serif letter-body' }, r.body))),
       h('button', { class: 'btn', onclick: close }, 'Close')));
+  const update = () => {
+    const left = letters.map((r) => r.goneAt.getTime() - Date.now());
+    if (Math.max(...left) <= 0) return close();
+    left.forEach((ms, n) => {
+      const sec = Math.max(0, Math.ceil(ms / 1000));
+      clocks[n].textContent = `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
+    });
+  };
+  update();
+  tick = setInterval(update, 1000);
   document.body.append(overlay);
-  const soonest = Math.min(...letters.map((r) => r.goneAt.getTime()));
-  timer = setTimeout(close, Math.max(0, soonest - Date.now()));
 }
 
 // ---------- His screens ----------
@@ -362,6 +429,7 @@ async function feedScreen() {
 async function route() {
   const isHim = location.hash.startsWith('#/him') || new URLSearchParams(location.search).has('him');
   if (scenePromise) scenePromise.then((sc) => sc?.setVisible(!isHim));
+  syncAmbient();
   if (isHim) stopWatchingReplies();
   if (isHim) {
     const session = await store.getSession();

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { currentHour } from './time.js';
 
 const PAPER = 0xfaf7f2;
 const MOODS = {
@@ -39,13 +40,6 @@ function look(hour) {
   return { top: mixC('top'), hor: mixC('hor'), deep: mixC('deep'), shallow: mixC('shallow'), sun: mixC('sun'),
     sunEl: mixN('sunEl'), sunI: mixN('sunI'), stars: mixN('stars') };
 }
-
-const currentHour = () => {
-  const o = new URLSearchParams(location.search).get('hour'); // ?hour=19.5 previews a time of day
-  if (o !== null && !Number.isNaN(+o)) return +o;
-  const d = new Date();
-  return d.getHours() + d.getMinutes() / 60;
-};
 
 const SKY_VERT = /* glsl */ `varying vec3 vDir; void main() { vDir = position; gl_Position = projectionMatrix * viewMatrix * modelMatrix * vec4(position, 1.0); }`;
 const SKY_FRAG = /* glsl */ `
@@ -280,7 +274,7 @@ export function initScene() {
     renderer.setClearColor(t.top);
     waterTargets();
     if (jump) { uniforms.uDeep.value.copy(deepT); uniforms.uShallow.value.copy(shallowT); }
-    phaseName = t.stars > 0.5 ? 'night' : 'day';
+    phaseName = t.stars > 0.12 ? 'night' : 'day';
     applyTheme();
     if (!running) draw();
   }
