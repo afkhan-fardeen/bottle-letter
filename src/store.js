@@ -92,22 +92,39 @@ document.addEventListener('visibilitychange', () => {
 
 // ---- His side ----
 
+const HIS_EMAIL = import.meta.env.VITE_HIS_EMAIL || 'afkhan.fardeen@gmail.com';
+// Supabase wants 6+ characters, so the account password is his PIN with a fixed prefix.
+const PIN_PREFIX = 'bl-his-';
+const HIM_FLAG = 'bl.him'; // demo mode only
+
 export async function getSession() {
-  if (!remote) return { local: true };
+  if (!remote) {
+    try { return localStorage.getItem(HIM_FLAG) ? { local: true } : null; } catch { return null; }
+  }
   const { data } = await supabase.auth.getSession();
   return data.session;
 }
 
-export async function signIn(email) {
-  const { error } = await supabase.auth.signInWithOtp({
-    email,
-    options: { emailRedirectTo: `${location.origin}/?him=1` },
-  });
-  if (error) throw error;
+// Returns false for a wrong PIN, throws if it could not be checked.
+export async function signInWithPin(pin) {
+  const p = pin.trim();
+  if (!p) return false;
+  if (!remote) {
+    if (p !== '1234') return false;
+    try { localStorage.setItem(HIM_FLAG, '1'); } catch { /* private mode */ }
+    return true;
+  }
+  const { error } = await supabase.auth.signInWithPassword({ email: HIS_EMAIL, password: PIN_PREFIX + p });
+  if (error) {
+    if (error.status === 400) return false;
+    throw error;
+  }
+  return true;
 }
 
 export async function signOut() {
   if (remote) await supabase.auth.signOut();
+  else { try { localStorage.removeItem(HIM_FLAG); } catch { /* private mode */ } }
 }
 
 export async function list() {

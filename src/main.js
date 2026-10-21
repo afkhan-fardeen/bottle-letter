@@ -306,21 +306,21 @@ async function openLetters() {
 
 // ---------- His screens ----------
 
-function loginScreen(note) {
-  const email = h('input', { class: 'field', type: 'email', required: true, autocomplete: 'email', placeholder: 'Email', 'aria-label': 'Email' });
-  const msg = h('p', { class: 'small muted' }, note || '');
+function loginScreen() {
+  const pin = h('input', { class: 'field', type: 'password', inputmode: 'numeric', autocomplete: 'current-password', 'aria-label': 'Password', placeholder: 'Password' });
+  const msg = h('p', { class: 'small error', role: 'status' });
   const form = h('form', { onsubmit: async (e) => {
     e.preventDefault();
+    msg.textContent = '';
     try {
-      await store.signIn(email.value.trim());
-      msg.className = 'small muted';
-      msg.textContent = 'Check your email for the link.';
+      if (await store.signInWithPin(pin.value)) return route();
+      msg.textContent = 'Not quite.';
     } catch {
-      msg.className = 'small error';
-      msg.textContent = "That didn't work. Try again.";
+      msg.textContent = "Couldn't reach it. Try again.";
     }
-  } }, email, h('button', { class: 'btn' }, 'Send me a link'), msg);
+  } }, pin, h('button', { class: 'btn' }, 'Enter'), msg);
   render(h('main', { class: 'center' }, form));
+  pin.focus();
 }
 
 const dayLabel = (iso) => {
@@ -350,7 +350,7 @@ async function feedScreen() {
     if (!menuOpen) return;
     top.append(h('div', { class: 'menu' },
       h('button', { onclick: () => { store.exportBackup(all); menuOpen = false; drawMenu(); } }, 'Export backup'),
-      store.remote ? h('button', { onclick: async () => { await store.signOut(); loginScreen(); } }, 'Sign out') : null,
+      h('button', { onclick: async () => { await store.signOut(); loginScreen(); } }, 'Sign out'),
     ));
   };
 
