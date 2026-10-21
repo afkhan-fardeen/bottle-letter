@@ -1,13 +1,26 @@
 :root {
   --bg: #FAF7F2;
   --text: #2B2A28;
-  --muted: #6F6A61; /* darker than #8A857C so small text clears AA on paper */
+  --muted: #5A554D; /* darker than #8A857C so small text clears AA on paper */
   --line: #E6E1D8;
   --accent: #3F7A80;
   --serif: Newsreader, Lora, Georgia, 'Times New Roman', serif;
   --sans: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --radius: 12px;
   --pad: 16px;
+  --chip-bg: rgba(250,247,242,.94);
+  --card: #fff;
+}
+
+/* set by the scene after dark */
+:root[data-time="night"] {
+  --bg: #0F1B2D;
+  --text: #EDE8DF;
+  --muted: #A6B0BC;
+  --line: rgba(255,255,255,.18);
+  --accent: #5FA3AA;
+  --chip-bg: rgba(18,30,48,.9);
+  --card: #16243A;
 }
 
 * { box-sizing: border-box; }
@@ -32,6 +45,7 @@ button { cursor: pointer; }
   min-height: 48px; padding: 0 24px; border: 0; border-radius: var(--radius);
   background: var(--accent); color: #fff;
 }
+body { transition: color .8s; }
 .btn:disabled { opacity: .7; cursor: default; }
 .link { background: none; border: 0; color: var(--muted); min-height: 44px; padding: 0 4px; text-decoration: underline; text-underline-offset: 3px; }
 
@@ -61,7 +75,7 @@ button { cursor: pointer; }
 .write textarea:focus { outline: none; }
 .write textarea::placeholder { color: var(--muted); }
 .moods { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 16px; align-items: center; }
-.chip { min-height: 44px; padding: 0 16px; font-size: 16px; border: 1px solid var(--line); border-radius: var(--radius); background: rgba(250,247,242,.94); color: var(--text); }
+.chip { min-height: 44px; padding: 0 16px; font-size: 16px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--chip-bg); color: var(--text); }
 .chip[aria-pressed="true"] { border-color: var(--accent); background: var(--accent); color: #fff; }
 .send { display: grid; gap: 8px; justify-items: stretch; text-align: center; }
 
@@ -84,7 +98,7 @@ button { cursor: pointer; }
 .menu button { min-height: 44px; padding: 0 16px; background: none; border: 0; text-align: left; }
 .filters { display: flex; gap: 8px; margin-bottom: 8px; }
 .day { margin: 24px 0 8px; font-size: 14px; color: var(--muted); }
-.card { background: #fff; border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(43,42,40,.06); }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(43,42,40,.06); }
 .card header { display: flex; justify-content: space-between; align-items: center; font-size: 14px; color: var(--muted); }
 .card header .star { margin: -8px -12px -8px 0; }
 .card .body { font: 19px/1.6 var(--serif); white-space: pre-wrap; margin: 4px 0 0; overflow-wrap: anywhere; }

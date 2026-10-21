@@ -13,6 +13,73 @@ const MOODS = {
   Lonely:   { deep: '#6A8799', shallow: '#BBC8D3', speed: 0.7 },
 };
 
+// Scenery by local time. Each key is the look at that hour; hours in between are blended.
+const NIGHT = { top: '#15295A', hor: '#304575', deep: '#2C4660', shallow: '#4E6E88', sunEl: -10, sunI: 0, stars: 1, sun: '#FFE0B0' };
+const KEYS = [
+  { h: 0, ...NIGHT },
+  { h: 5, ...NIGHT },
+  { h: 6, top: '#C3CCE6', hor: '#F5C2A4', deep: '#6F93A0', shallow: '#EBC9B5', sunEl: 2, sunI: 1, stars: 0, sun: '#FFC48A' },
+  { h: 8, top: '#A9CBE6', hor: '#FBEBD6', deep: '#5E9CA6', shallow: '#C5E0DC', sunEl: 20, sunI: 1, stars: 0, sun: '#FFE8B8' },
+  { h: 13, top: '#8EC1E8', hor: '#E6F1F3', deep: '#4F93A3', shallow: '#BFE3E3', sunEl: 33, sunI: 1, stars: 0, sun: '#FFF4D6' },
+  { h: 17, top: '#9DBEDF', hor: '#F6E3C6', deep: '#5D96A0', shallow: '#CFE0D6', sunEl: 20, sunI: 1, stars: 0, sun: '#FFD9A0' },
+  { h: 18.5, top: '#D6C8E0', hor: '#F7B98F', deep: '#627E9A', shallow: '#E8B9A2', sunEl: 3, sunI: 1, stars: 0, sun: '#FF9D5C' },
+  { h: 19.5, top: '#3E4A7A', hor: '#C98AA0', deep: '#3A5470', shallow: '#7C7C9A', sunEl: -2, sunI: 0.4, stars: 0.45, sun: '#FF8A5C' },
+  { h: 21, ...NIGHT },
+  { h: 24, ...NIGHT },
+].map((k) => ({ ...k, top: new THREE.Color(k.top), hor: new THREE.Color(k.hor), deep: new THREE.Color(k.deep), shallow: new THREE.Color(k.shallow), sun: new THREE.Color(k.sun) }));
+
+function look(hour) {
+  let i = KEYS.findIndex((k, n) => hour >= k.h && hour < KEYS[n + 1].h);
+  if (i < 0) i = KEYS.length - 2;
+  const a = KEYS[i], b = KEYS[i + 1];
+  let f = (hour - a.h) / (b.h - a.h);
+  f = f * f * (3 - 2 * f);
+  const mixC = (k) => a[k].clone().lerp(b[k], f);
+  const mixN = (k) => a[k] + (b[k] - a[k]) * f;
+  return { top: mixC('top'), hor: mixC('hor'), deep: mixC('deep'), shallow: mixC('shallow'), sun: mixC('sun'),
+    sunEl: mixN('sunEl'), sunI: mixN('sunI'), stars: mixN('stars') };
+}
+
+const currentHour = () => {
+  const o = new URLSearchParams(location.search).get('hour'); // ?hour=19.5 previews a time of day
+  if (o !== null && !Number.isNaN(+o)) return +o;
+  const d = new Date();
+  return d.getHours() + d.getMinutes() / 60;
+};
+
+const SKY_VERT = /* glsl */ `varying vec3 vDir; void main() { vDir = position; gl_Position = projectionMatrix * viewMatrix * modelMatrix * vec4(position, 1.0); }`;
+const SKY_FRAG = /* glsl */ `
+  uniform vec3 uTop; uniform vec3 uHor; uniform vec3 uSunCol; uniform vec3 uSunDir; uniform vec3 uMoonDir;
+  uniform float uSunI; uniform float uStars; uniform float uTime;
+  varying vec3 vDir;
+  float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+  float vnoise(vec2 p) {
+    vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+    return mix(mix(hash(i), hash(i + vec2(1, 0)), f.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), f.x), f.y);
+  }
+  float fbm(vec2 p) { float v = 0.0, a = 0.5; for (int i = 0; i < 4; i++) { v += a * vnoise(p); p *= 2.0; a *= 0.5; } return v; }
+  void main() {
+    vec3 d = normalize(vDir);
+    float h = max(d.y, 0.0);
+    vec3 col = mix(uHor, uTop, smoothstep(0.0, 0.6, pow(h, 0.7)));
+    float s = max(dot(d, uSunDir), 0.0);
+    col += uSunCol * (pow(s, 6.0) * 0.3 + pow(s, 1500.0) * 1.2) * uSunI;
+    vec2 cuv = d.xz / (h + 0.18) * 0.9 + vec2(uTime * 0.012, 0.0);
+    float cm = smoothstep(0.52, 0.82, fbm(cuv * 1.6)) * smoothstep(0.02, 0.22, d.y) * 0.6;
+    vec3 cloud = mix(uHor, vec3(1.0), 0.55 * (1.0 - uStars));
+    col = mix(col, cloud, cm);
+    vec2 suv = vec2(atan(d.x, -d.z), asin(clamp(d.y, 0.0, 1.0))) * 70.0;
+    vec2 sid = floor(suv);
+    vec2 sf = fract(suv) - 0.5 - (vec2(hash(sid + 3.1), hash(sid + 7.7)) - 0.5) * 0.6;
+    float star = step(0.93, hash(sid)) * smoothstep(0.12, 0.0, length(sf)) * (0.4 + 0.6 * hash(sid + 1.3))
+               * smoothstep(0.03, 0.25, d.y) * (1.0 - cm);
+    col += vec3(star) * uStars;
+    float m = dot(d, uMoonDir);
+    col = mix(col, vec3(0.93, 0.95, 1.0), smoothstep(0.99965, 0.99968, m) * uStars);
+    col += vec3(0.55, 0.65, 0.9) * pow(max(m, 0.0), 80.0) * 0.18 * uStars;
+    gl_FragColor = vec4(col, 1.0);
+  }`;
+
 // The same swell function runs in the shader and here, so the bottle rides the visible water.
 const swell = (x, z, t) =>
   0.18 * Math.sin(x * 0.5 + t * 0.8) + 0.12 * Math.sin(z * 0.7 + t * 1.1 + x * 0.3) + 0.06 * Math.sin((x + z) * 1.3 + t * 1.7);
@@ -58,7 +125,7 @@ const waterMat = (uniforms) => new THREE.ShaderMaterial({
       gl_Position = projectionMatrix * viewMatrix * wp;
     }`,
   fragmentShader: /* glsl */ `
-    uniform vec3 uDeep; uniform vec3 uShallow; uniform vec3 uSky;
+    uniform vec3 uDeep; uniform vec3 uShallow; uniform vec3 uSky; uniform vec3 uLightDir; uniform vec3 uLightCol;
     varying vec3 vWorld; varying vec3 vN; varying float vH;
     void main() {
       vec3 V = normalize(cameraPosition - vWorld);
@@ -66,8 +133,7 @@ const waterMat = (uniforms) => new THREE.ShaderMaterial({
       float fres = pow(1.0 - max(dot(n, V), 0.0), 3.0);
       vec3 col = mix(uDeep, uShallow, smoothstep(-0.25, 0.3, vH));
       col = mix(col, uSky, fres * 0.55);
-      vec3 L = normalize(vec3(-0.3, 0.6, -1.0));
-      col += vec3(1.0) * pow(max(dot(reflect(-L, n), V), 0.0), 70.0) * 0.55;
+      col += uLightCol * pow(max(dot(reflect(-uLightDir, n), V), 0.0), 70.0) * 0.55;
       float d = length(cameraPosition - vWorld);
       col = mix(col, uSky, smoothstep(12.0, 60.0, d));
       gl_FragColor = vec4(col, 1.0);
@@ -118,7 +184,8 @@ export function initScene() {
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 120);
   camera.position.set(0, 2.2, 0);
-  scene.add(new THREE.HemisphereLight(0xffffff, 0xcfe0de, 1.1));
+  const hemi = new THREE.HemisphereLight(0xffffff, 0xcfe0de, 1.1);
+  scene.add(hemi);
   const sun = new THREE.DirectionalLight(0xfff1dc, 2.2);
   sun.position.set(-3, 5, -2);
   scene.add(sun);
@@ -129,6 +196,8 @@ export function initScene() {
     uDeep: { value: new THREE.Color(MOODS.default.deep) },
     uShallow: { value: new THREE.Color(MOODS.default.shallow) },
     uSky: { value: new THREE.Color(PAPER) },
+    uLightDir: { value: new THREE.Vector3(0, 0.5, -1) },
+    uLightCol: { value: new THREE.Color(1, 1, 1) },
   };
   const plane = new THREE.PlaneGeometry(70, 80, 170, 200);
   plane.rotateX(-Math.PI / 2);
@@ -136,6 +205,18 @@ export function initScene() {
   water.position.z = -35;
   water.frustumCulled = false;
   scene.add(water);
+
+  const skyU = {
+    uTop: { value: new THREE.Color() }, uHor: { value: new THREE.Color() }, uSunCol: { value: new THREE.Color() },
+    uSunDir: { value: new THREE.Vector3() }, uMoonDir: { value: new THREE.Vector3(0.2, 0.42, -0.88).normalize() },
+    uSunI: { value: 1 }, uStars: { value: 0 }, uTime: uniforms.uTime,
+  };
+  const sky = new THREE.Mesh(new THREE.SphereGeometry(100, 32, 16), new THREE.ShaderMaterial({
+    uniforms: skyU, vertexShader: SKY_VERT, fragmentShader: SKY_FRAG, side: THREE.BackSide, depthWrite: false, fog: false }));
+  sky.position.copy(camera.position);
+  sky.renderOrder = -1;
+  sky.frustumCulled = false;
+  scene.add(sky);
 
   const bottle = buildBottle();
   scene.add(bottle.group);
@@ -168,6 +249,49 @@ export function initScene() {
   let speed = 1, speedTarget = 1;
   const deepT = new THREE.Color(MOODS.default.deep);
   const shallowT = new THREE.Color(MOODS.default.shallow);
+  const moodDeep = new THREE.Color(MOODS.default.deep), moodShallow = new THREE.Color(MOODS.default.shallow);
+  let timeLook = look(currentHour());
+  let phaseName = 'day';
+
+  // Water takes its colour from the time of day, tinted by her mood.
+  function waterTargets() {
+    deepT.copy(moodDeep).lerp(timeLook.deep, 0.55);
+    shallowT.copy(moodShallow).lerp(timeLook.shallow, 0.55);
+  }
+
+  function applyTime(jump) {
+    timeLook = look(currentHour());
+    const t = timeLook;
+    skyU.uTop.value.copy(t.top);
+    skyU.uHor.value.copy(t.hor);
+    skyU.uSunCol.value.copy(t.sun);
+    skyU.uSunI.value = t.sunI;
+    skyU.uStars.value = t.stars;
+    const e = (t.sunEl * Math.PI) / 180;
+    skyU.uSunDir.value.set(0.25 * Math.cos(e), Math.sin(e), -Math.cos(e)).normalize();
+    uniforms.uSky.value.copy(t.hor);
+    uniforms.uLightDir.value.copy(skyU.uMoonDir.value).lerp(skyU.uSunDir.value, t.sunI).normalize();
+    uniforms.uLightCol.value.setRGB(0.7, 0.8, 1).multiplyScalar(0.6).lerp(t.sun, t.sunI);
+    sun.color.copy(t.sun);
+    sun.intensity = 0.35 + 1.9 * t.sunI;
+    sun.position.copy(uniforms.uLightDir.value).multiplyScalar(8);
+    hemi.intensity = 0.5 + 0.6 * t.sunI;
+    hemi.color.copy(t.hor).lerp(new THREE.Color(1, 1, 1), 0.5);
+    renderer.setClearColor(t.top);
+    waterTargets();
+    if (jump) { uniforms.uDeep.value.copy(deepT); uniforms.uShallow.value.copy(shallowT); }
+    phaseName = t.stars > 0.5 ? 'night' : 'day';
+    applyTheme();
+    if (!running) draw();
+  }
+
+  // Night flips the page to light-on-dark so writing stays readable.
+  function applyTheme() {
+    const name = visible ? phaseName : 'day';
+    document.documentElement.dataset.time = name;
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.content = name === 'night' ? '#0F1B2D' : '#FAF7F2';
+  }
   const IDLE_PITCH = 0.2, SEND_PITCH = -0.23;
   let pitch = IDLE_PITCH, pitchTarget = IDLE_PITCH;
   let yaw = 0, yawTarget = 0;
@@ -305,6 +429,8 @@ export function initScene() {
   function stop() { running = false; }
   document.addEventListener('visibilitychange', () => (document.hidden ? stop() : start()));
 
+  applyTime(true);
+  setInterval(() => applyTime(false), 60_000);
   resize();
   step(0.016);
   draw();
@@ -314,12 +440,14 @@ export function initScene() {
     setVisible(v) {
       visible = v;
       canvas.style.display = v ? '' : 'none';
+      applyTheme();
       v ? start() : stop();
     },
     setMood(name) {
       const m = MOODS[name] || MOODS.default;
-      deepT.set(m.deep);
-      shallowT.set(m.shallow);
+      moodDeep.set(m.deep);
+      moodShallow.set(m.shallow);
+      waterTargets();
       speedTarget = m.speed;
       if (!running) { uniforms.uDeep.value.copy(deepT); uniforms.uShallow.value.copy(shallowT); draw(); }
     },
