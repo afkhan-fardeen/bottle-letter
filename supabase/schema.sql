@@ -1,5 +1,5 @@
 -- Run in the Supabase SQL editor.
--- Replace his@example.com with his real email (the only account allowed to read).
+-- Replace afkhan.fardeen@gmail.com with his real email (the only account allowed to read).
 
 create table if not exists messages (
   id uuid primary key,
@@ -18,9 +18,9 @@ create policy "anyone can leave a message" on messages
 -- Only he can read and star.
 create policy "he reads" on messages
   for select to authenticated
-  using ((auth.jwt() ->> 'email') = 'his@example.com');
+  using ((auth.jwt() ->> 'email') = 'afkhan.fardeen@gmail.com');
 
 create policy "he stars" on messages
   for update to authenticated
-  using ((auth.jwt() ->> 'email') = 'his@example.com')
-  with check ((auth.jwt() ->> 'email') = 'his@example.com');
+  using ((auth.jwt() ->> 'email') = 'afkhan.fardeen@gmail.com')
+  with check ((auth.jwt() ->> 'email') = 'afkhan.fardeen@gmail.com');
