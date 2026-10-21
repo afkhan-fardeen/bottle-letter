@@ -94,3 +94,17 @@ button { cursor: pointer; }
 /* sent text over the 3D water */
 .sent-text { position: fixed; top: 16%; left: 0; right: 0; margin: 0; text-align: center; font-size: 22px; animation: rise 1s ease both; pointer-events: none; }
 @keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
+/* his bottle on her water */
+.reply-bottle { position: fixed; left: 0; top: 0; z-index: 3; width: 88px; height: 64px; background: none; border: 0; padding: 0; }
+.reply-flat { position: fixed; top: 64px; left: 50%; transform: translateX(-50%); z-index: 3; min-height: 44px; padding: 0 16px; border: 1px solid var(--accent); border-radius: var(--radius); background: var(--bg); color: var(--accent); }
+.letter-overlay { position: fixed; inset: 0; z-index: 5; background: var(--bg); overflow-y: auto; padding: env(safe-area-inset-top) var(--pad) env(safe-area-inset-bottom); }
+.letter { max-width: 640px; margin: 0 auto; padding: 56px 0 32px; display: grid; gap: 28px; justify-items: start; }
+.letter-body { margin: 0 0 8px; font-size: 22px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* his composer */
+.composer { margin-bottom: 8px; display: grid; gap: 8px; }
+.reply-box { padding: 12px 14px; resize: vertical; font: 18px/1.5 var(--serif); }
+.composer-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.sent-row { display: flex; gap: 8px; align-items: baseline; border-top: 1px solid var(--line); padding: 8px 0; }
+.sent-text-line { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--serif); }

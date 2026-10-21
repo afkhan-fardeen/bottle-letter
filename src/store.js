@@ -8,6 +8,22 @@ export const supabase = remote ? createClient(SB_URL, KEY) : null;
 
 const OUTBOX = 'bl.outbox';
 const LOCAL = 'bl.messages'; // demo mode only
+const LOCAL_REPLIES = 'bl.replies'; // demo mode only
+const KEY_SLOT = 'bl.key';
+export const REPLY_MINUTES = 69;
+const REPLY_MS = REPLY_MINUTES * 60_000;
+
+// Her device is paired once by opening a link that carries ?key=...; the key then lives only here.
+export function pairFromUrl() {
+  const params = new URLSearchParams(location.search);
+  const k = params.get('key');
+  if (!k) return;
+  try { localStorage.setItem(KEY_SLOT, k); } catch { /* private mode */ }
+  params.delete('key');
+  const qs = params.toString();
+  history.replaceState(null, '', location.pathname + (qs ? `?${qs}` : '') + location.hash);
+}
+const herKey = () => { try { return localStorage.getItem(KEY_SLOT) || ''; } catch { return ''; } };
 
 const read = (k) => {
   try { return JSON.parse(localStorage.getItem(k)) || []; } catch { return []; }
@@ -35,9 +51,11 @@ export async function flush() {
   try {
     for (const msg of read(OUTBOX)) {
       if (remote) {
-        const { error } = await supabase.from('messages').insert(msg);
-        // 23505 = already stored by an earlier attempt; safe to drop from the queue.
-        if (error && error.code !== '23505') break;
+        // leave_message ignores a repeated id, so retrying after a dropped connection is safe.
+        const { error } = await supabase.rpc('leave_message', {
+          k: herKey(), p_id: msg.id, p_body: msg.body, p_mood: msg.mood, p_at: msg.created_at,
+        });
+        if (error) break;
       } else {
         write(LOCAL, [...read(LOCAL), msg]);
       }
@@ -101,4 +119,70 @@ export function exportBackup(messages) {
   a.download = `letters-${new Date().toISOString().slice(0, 10)}.json`;
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+// ---------- Him -> her: gone REPLY_MINUTES after she opens it ----------
+
+const live = (r) => !r.opened_at || new Date(r.opened_at).getTime() + REPLY_MS > Date.now();
+
+// His side
+export async function sendReply(body) {
+  const text = body.trim();
+  if (!remote) {
+    write(LOCAL_REPLIES, [...read(LOCAL_REPLIES), { id: crypto.randomUUID(), created_at: new Date().toISOString(), body: text, opened_at: null }]);
+    return;
+  }
+  const { error } = await supabase.from('replies').insert({ body: text });
+  if (error) throw error;
+}
+
+export async function listSentReplies() {
+  if (!remote) {
+    const rows = read(LOCAL_REPLIES).filter(live);
+    write(LOCAL_REPLIES, rows);
+    return rows.sort((a, b) => b.created_at.localeCompare(a.created_at));
+  }
+  const { data, error } = await supabase.from('replies').select('*').order('created_at', { ascending: false });
+  if (error) throw error;
+  return data;
+}
+
+export async function unsendReply(id) {
+  if (!remote) { write(LOCAL_REPLIES, read(LOCAL_REPLIES).filter((r) => r.id !== id)); return; }
+  const { error } = await supabase.from('replies').delete().eq('id', id);
+  if (error) throw error;
+}
+
+// Her side. Bodies are never stored on her device: they are fetched while open and dropped on close.
+export async function pendingReplies() {
+  try {
+    if (!remote) {
+      const rows = read(LOCAL_REPLIES).filter(live);
+      write(LOCAL_REPLIES, rows);
+      return rows.map(({ id, created_at, opened_at }) => ({ id, created_at, opened_at }));
+    }
+    const { data, error } = await supabase.rpc('her_replies', { k: herKey() });
+    if (error) return [];
+    return data.map(({ id, created_at, opened_at }) => ({ id, created_at, opened_at }));
+  } catch { return []; }
+}
+
+export async function openReplies(ids) {
+  const out = [];
+  for (const id of ids) {
+    if (!remote) {
+      const rows = read(LOCAL_REPLIES);
+      const r = rows.find((x) => x.id === id);
+      if (r && live(r)) {
+        r.opened_at ||= new Date().toISOString();
+        write(LOCAL_REPLIES, rows);
+        out.push({ ...r });
+      }
+    } else {
+      const { data, error } = await supabase.rpc('open_reply', { k: herKey(), p_id: id });
+      if (error) throw error;
+      if (data?.[0]) out.push(data[0]);
+    }
+  }
+  return out.map((r) => ({ ...r, goneAt: new Date(new Date(r.opened_at).getTime() + REPLY_MS) }));
 }

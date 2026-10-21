@@ -1,5 +1,5 @@
 import * as store from './store.js';
-import { HIS_NAME } from './store.js';
+import { HIS_NAME, REPLY_MINUTES } from './store.js';
 
 const app = document.getElementById('app');
 const MOODS = ['Calm', 'Heavy', 'Grateful', 'Tired', 'Anxious', 'Hopeful', 'Angry', 'Lonely'];
@@ -135,6 +135,7 @@ function writeScreen() {
   render(page);
   box.focus();
   getScene().then((sc) => { sc?.setVisible(true); sc?.setMood(null); });
+  watchReplies();
 }
 
 async function sentState(soundOn) {
@@ -162,6 +163,58 @@ async function sentState(soundOn) {
   const overlay = h('div', { class: 'sent', role: 'status' }, art, h('p', { class: 'serif' }, 'Carried by the tide.'));
   setTimeout(() => document.body.append(overlay), reduceMotion() ? 0 : 400);
   setTimeout(() => { overlay.remove(); writeScreen(); }, reduceMotion() ? 1400 : 2300);
+}
+
+// ---------- Her: bottles from him ----------
+
+let replyTimer;
+const replyBtn = h('button', { class: 'reply-bottle', 'aria-label': 'A bottle has drifted in', onclick: () => openLetters() });
+const clock = (d) => d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+
+async function checkReplies() {
+  const rows = await store.pendingReplies();
+  const sc = await getScene();
+  if (!rows.length) { replyBtn.remove(); sc?.setReplyBottle(null); return; }
+  if (!replyBtn.isConnected) document.body.append(replyBtn);
+  if (sc) {
+    replyBtn.className = 'reply-bottle';
+    replyBtn.replaceChildren();
+    sc.setReplyBottle(replyBtn);
+  } else {
+    replyBtn.className = 'reply-flat';
+    replyBtn.textContent = 'A bottle has arrived';
+  }
+}
+
+function watchReplies() {
+  clearInterval(replyTimer);
+  checkReplies();
+  replyTimer = setInterval(checkReplies, 60_000);
+}
+
+function stopWatchingReplies() {
+  clearInterval(replyTimer);
+  replyBtn.remove();
+  scenePromise?.then((sc) => sc?.setReplyBottle(null));
+}
+
+async function openLetters() {
+  const rows = await store.pendingReplies();
+  let letters;
+  try { letters = await store.openReplies(rows.map((r) => r.id)); } catch { return; }
+  if (!letters.length) return checkReplies();
+
+  let timer;
+  const close = () => { clearTimeout(timer); overlay.remove(); checkReplies(); }; // text leaves the DOM here
+  const overlay = h('div', { class: 'letter-overlay', role: 'dialog', 'aria-modal': 'true', 'aria-label': `A message from ${HIS_NAME}` },
+    h('div', { class: 'letter' },
+      ...letters.map((r) => h('section', {},
+        h('p', { class: 'serif letter-body' }, r.body),
+        h('p', { class: 'muted small' }, `This will be gone at ${clock(r.goneAt)}.`))),
+      h('button', { class: 'btn', onclick: close }, 'Close')));
+  document.body.append(overlay);
+  const soonest = Math.min(...letters.map((r) => r.goneAt.getTime()));
+  timer = setTimeout(close, Math.max(0, soonest - Date.now()));
 }
 
 // ---------- His screens ----------
@@ -252,7 +305,30 @@ async function feedScreen() {
     listEl.replaceChildren(...out);
   }
 
-  render(h('main', {}, top, filters, listEl));
+  const reply = h('textarea', { class: 'field reply-box', rows: '3', placeholder: 'Leave her a bottle.', 'aria-label': 'Message to her',
+    oninput: () => { sendReply.disabled = !reply.value.trim(); } });
+  const sendReply = h('button', { class: 'btn', disabled: true, onclick: async () => {
+    sendReply.disabled = true;
+    try { await store.sendReply(reply.value); reply.value = ''; } catch { sendReply.disabled = false; }
+    drawSent();
+  } }, 'Send');
+  const sentEl = h('div', { class: 'sent-list' });
+  async function drawSent() {
+    let rows = [];
+    try { rows = await store.listSentReplies(); } catch { return; }
+    sentEl.replaceChildren(...rows.map((r) => h('div', { class: 'sent-row small' },
+      h('span', { class: 'muted' }, r.opened_at
+        ? `Opened. Gone at ${clock(new Date(new Date(r.opened_at).getTime() + REPLY_MINUTES * 60_000))}.`
+        : 'Not opened yet.'),
+      h('span', { class: 'sent-text-line' }, r.body),
+      r.opened_at ? null : h('button', { class: 'link small', onclick: async () => { await store.unsendReply(r.id); drawSent(); } }, 'Unsend'))));
+  }
+  const composer = h('section', { class: 'composer' }, reply,
+    h('div', { class: 'composer-row' }, h('span', { class: 'muted small' }, `Gone ${REPLY_MINUTES} minutes after she opens it.`), sendReply), sentEl);
+  drawSent();
+  const sentTimer = setInterval(() => (sentEl.isConnected ? drawSent() : clearInterval(sentTimer)), 30_000);
+
+  render(h('main', {}, top, composer, filters, listEl));
   try {
     all = await store.list();
   } catch {
@@ -267,13 +343,16 @@ async function feedScreen() {
 async function route() {
   const isHim = location.hash.startsWith('#/him') || new URLSearchParams(location.search).has('him');
   if (scenePromise) scenePromise.then((sc) => sc?.setVisible(!isHim));
+  if (isHim) stopWatchingReplies();
   if (isHim) {
     const session = await store.getSession();
     return session ? feedScreen() : loginScreen();
   }
+  stopWatchingReplies();
   return pref.get('bl.seen') ? writeScreen() : firstLaunch();
 }
 
+store.pairFromUrl();
 addEventListener('hashchange', route);
 route();
 store.flush();

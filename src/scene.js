@@ -74,7 +74,7 @@ const waterMat = (uniforms) => new THREE.ShaderMaterial({
     }`,
 });
 
-function buildBottle() {
+function buildBottle(letterColor = 0xf4ead4) {
   const s = 0.5;
   const profile = [[0, 0], [0.38, 0], [0.5, 0.1], [0.52, 0.5], [0.5, 1.0], [0.38, 1.35], [0.18, 1.6], [0.15, 2.0], [0.19, 2.05], [0.19, 2.12]]
     .map(([r, y]) => new THREE.Vector2(r * s, y * s));
@@ -87,7 +87,7 @@ function buildBottle() {
     color: 0xcfe9e6, opacity: 0.42, roughness: 0.05, clearcoat: 1, side: THREE.DoubleSide, depthWrite: false })));
   const rim = new THREE.Mesh(geo, mk(new THREE.MeshBasicMaterial({ color: 0x3f7a80, opacity: 0.55, side: THREE.BackSide, depthWrite: false })));
   rim.scale.setScalar(1.05);
-  const letter = new THREE.Mesh(new THREE.CylinderGeometry(0.1 * s, 0.1 * s, 1.0 * s, 16), mk(new THREE.MeshStandardMaterial({ color: 0xf4ead4, roughness: 0.9 })));
+  const letter = new THREE.Mesh(new THREE.CylinderGeometry(0.1 * s, 0.1 * s, 1.0 * s, 16), mk(new THREE.MeshStandardMaterial({ color: letterColor, roughness: 0.9 })));
   letter.position.y = -0.1 * s;
   const cork = new THREE.Mesh(new THREE.CylinderGeometry(0.17 * s, 0.14 * s, 0.22 * s, 16), mk(new THREE.MeshStandardMaterial({ color: 0xc9a878, roughness: 1 })));
   cork.position.y = 1.1 * s;
@@ -139,6 +139,15 @@ export function initScene() {
 
   const bottle = buildBottle();
   scene.add(bottle.group);
+
+  // His bottle: floats out on the water until she taps it.
+  const replyB = buildBottle(0xefb8ae);
+  replyB.group.scale.setScalar(2.4);
+  replyB.group.visible = false;
+  scene.add(replyB.group);
+  let replyEl = null;
+  const RX = 2.2, RZ = -20;
+  const proj = new THREE.Vector3();
 
   const dropN = 28;
   const dropGeo = new THREE.BufferGeometry();
@@ -207,6 +216,13 @@ export function initScene() {
 
     if (sendT >= 0) stepSend(dt);
 
+    if (replyEl) {
+      const g = replyB.group;
+      const bob = Math.sin(flow * 1.3) * 0.04;
+      g.position.set(RX, swell(RX, RZ, flow) + 0.1 + bob, RZ);
+      g.rotation.set(slopeZ(RX, RZ, flow) * 0.8, 0.5, 1.45 + slopeX(RX, RZ, flow) * 0.8);
+    }
+
     if (dropT >= 0) {
       dropT += dt;
       const pos = dropGeo.attributes.position;
@@ -246,7 +262,7 @@ export function initScene() {
     g.visible = true;
 
     const fade = T > 3.2 ? Math.max(0, 1 - (T - 3.2) / 0.7) : 1;
-    const base = [0.55, 0.42, 1, 1];
+    const base = [0.42, 0.55, 1, 1];
     bottle.mats.forEach((m, i) => { m.opacity = base[i] * fade; });
     if (T > 3.4) pitchTarget = IDLE_PITCH;
     if (T > 3.9) {
@@ -257,7 +273,19 @@ export function initScene() {
     }
   }
 
-  function draw() { renderer.render(scene, camera); }
+  function placeReply() {
+    if (!replyEl) return;
+    replyB.group.visible = sendT < 0;
+    replyEl.style.visibility = sendT < 0 ? 'visible' : 'hidden';
+    camera.updateMatrixWorld();
+    proj.copy(replyB.group.position).project(camera);
+    replyEl.style.transform = `translate(${(proj.x * 0.5 + 0.5) * innerWidth}px, ${(-proj.y * 0.5 + 0.5) * innerHeight}px) translate(-50%, -50%)`;
+  }
+
+  function draw() {
+    renderer.render(scene, camera);
+    placeReply();
+  }
 
   function loop(now) {
     if (!running) return;
@@ -294,6 +322,13 @@ export function initScene() {
       shallowT.set(m.shallow);
       speedTarget = m.speed;
       if (!running) { uniforms.uDeep.value.copy(deepT); uniforms.uShallow.value.copy(shallowT); draw(); }
+    },
+    // Pass the button that should sit on the bottle, or null to remove it.
+    setReplyBottle(el) {
+      replyEl = el;
+      replyB.group.visible = Boolean(el);
+      if (el) step(0); // pose it before the first frame, also in static mode
+      if (!running) draw();
     },
     typing() {
       ripple((Math.random() - 0.5) * 8, -5 - Math.random() * 8, 0.07);
