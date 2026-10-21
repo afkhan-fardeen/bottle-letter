@@ -32,7 +32,7 @@ button { cursor: pointer; }
   min-height: 48px; padding: 0 24px; border: 0; border-radius: var(--radius);
   background: var(--accent); color: #fff;
 }
-.btn:disabled { background: var(--line); color: var(--muted); cursor: default; }
+.btn:disabled { opacity: .7; cursor: default; }
 .link { background: none; border: 0; color: var(--muted); min-height: 44px; padding: 0 4px; text-decoration: underline; text-underline-offset: 3px; }
 
 .field {
@@ -61,8 +61,8 @@ button { cursor: pointer; }
 .write textarea:focus { outline: none; }
 .write textarea::placeholder { color: var(--muted); }
 .moods { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 16px; align-items: center; }
-.chip { min-height: 44px; padding: 0 16px; border: 1px solid var(--line); border-radius: var(--radius); background: transparent; }
-.chip[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+.chip { min-height: 44px; padding: 0 16px; font-size: 16px; border: 1px solid var(--line); border-radius: var(--radius); background: rgba(250,247,242,.94); color: var(--text); }
+.chip[aria-pressed="true"] { border-color: var(--accent); background: var(--accent); color: #fff; }
 .send { display: grid; gap: 8px; justify-items: stretch; text-align: center; }
 
 /* sent state */

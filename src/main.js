@@ -2,7 +2,11 @@ import * as store from './store.js';
 import { HIS_NAME, REPLY_MINUTES } from './store.js';
 
 const app = document.getElementById('app');
-const MOODS = ['Calm', 'Heavy', 'Grateful', 'Tired', 'Anxious', 'Hopeful', 'Angry', 'Lonely'];
+const MOODS = [
+  ['Calm', '😌'], ['Heavy', '🌧️'], ['Grateful', '🙏'], ['Tired', '😴'],
+  ['Anxious', '😟'], ['Hopeful', '🌅'], ['Angry', '😠'], ['Lonely', '🥺'],
+];
+const moodLabel = (name) => { const hit = MOODS.find(([m]) => m === name); return hit ? `${hit[1]} ${name}` : name; };
 const reduceMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 const pref = {
@@ -127,15 +131,13 @@ function writeScreen() {
     oninput: () => { sendBtn.disabled = !box.value.trim(); getScene().then((sc) => sc?.typing()); } });
 
   const moodRow = h('div', { class: 'moods' });
-  const showMoodLink = () => moodRow.replaceChildren(h('button', { class: 'link small', onclick: showChips }, 'Add a mood'));
-  const showChips = () => moodRow.replaceChildren(...MOODS.map((m) => {
-    const chip = h('button', { class: 'chip small', 'aria-pressed': 'false', onclick: () => {
+  const showMoodLink = () => moodRow.replaceChildren(h('button', { class: 'chip small', onclick: showChips }, 'How are you feeling?'));
+  const showChips = () => moodRow.replaceChildren(...MOODS.map(([m, emoji]) =>
+    h('button', { class: 'chip', 'aria-pressed': 'false', 'data-mood': m, onclick: () => {
       mood = mood === m ? null : m;
       getScene().then((sc) => sc?.setMood(mood));
-      moodRow.querySelectorAll('.chip').forEach((c) => c.setAttribute('aria-pressed', String(c.textContent === mood)));
-    } }, m);
-    return chip;
-  }));
+      moodRow.querySelectorAll('.chip').forEach((c) => c.setAttribute('aria-pressed', String(c.dataset.mood === mood)));
+    } }, `${emoji} ${m}`)));
   showMoodLink();
 
   const sendBtn = h('button', { class: 'btn', disabled: true, onclick: () => {
@@ -147,7 +149,7 @@ function writeScreen() {
     h('div', { class: 'bar' }, h('span', { class: 'muted small' }, date), sound),
     box,
     moodRow,
-    h('div', { class: 'send' }, sendBtn, h('span', { class: 'muted small' }, `${HIS_NAME} can read this.`)),
+    h('div', { class: 'send' }, sendBtn),
   );
   render(page);
   box.focus();
@@ -301,7 +303,7 @@ async function feedScreen() {
       } }, icons.star(m.starred));
     queueMicrotask(() => { if (body.scrollHeight > body.clientHeight + 1) more.hidden = false; });
     return h('article', { class: 'card' },
-      h('header', {}, h('span', {}, m.mood ? `${time} · ${m.mood}` : time), starBtn),
+      h('header', {}, h('span', {}, m.mood ? `${time} · ${moodLabel(m.mood)}` : time), starBtn),
       body, more);
   }
 
